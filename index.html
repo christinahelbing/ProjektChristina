@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Countdown Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #171B1F;
+    --surface: #1D2329;
+    --surface2: #262C33;
+    --border: #333B43;
+    --text: #EDEAE3;
+    --muted: #8A939B;
+    --muted2: #6E777F;
+    --accent: #C9713F;
+    --good: #8FAE8B;
+    --bad: #C97A6A;
+    --neutral-bar: #4A535B;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    padding-bottom: 90px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  button { font-family: inherit; cursor: pointer; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .hero { padding: 28px 20px 24px; border-bottom: 1px solid var(--surface2); }
+  .hero-label { font-size: 13px; color: var(--muted); letter-spacing: 0.3px; margin-bottom: 6px; }
+  .hero-countdown { display: flex; align-items: baseline; gap: 10px; }
+  .hero-days { font-size: 64px; font-weight: 600; line-height: 1; color: #F3EFE7; }
+  .hero-days-label { font-size: 17px; color: #B7BFC6; }
+  .week-strip { display: flex; gap: 3px; margin-top: 18px; }
+  .week-seg { flex: 1; height: 8px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+  .week-fill { height: 100%; background: var(--accent); }
+  .week-caption { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--muted2); }
+  .stat-row { display: flex; gap: 12px; margin-top: 22px; }
+  .stat-card { flex: 1; background: var(--surface); border-radius: 10px; padding: 12px 14px; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .stat-value { font-size: 20px; font-weight: 600; }
+
+  .content { padding: 20px 20px 0; }
+  .section-title { font-size: 16px; font-weight: 600; margin: 0 0 14px; }
+  .subsection-title { font-size: 13px; color: var(--muted); margin: 0 0 10px; font-weight: 500; }
+  .row-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+
+  .btn-accent { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--bg); border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; }
+  .btn-accent:disabled { background: var(--border); color: var(--muted2); }
+
+  .card { background: var(--surface); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .chart-card { background: var(--surface); border-radius: 12px; padding: 16px 8px 8px; margin-bottom: 18px; }
+  .empty-note { background: var(--surface); border-radius: 10px; padding: 14px; font-size: 13px; color: var(--muted2); margin-bottom: 18px; line-height: 1.5; }
+
+  .milestone { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+  .milestone.pending { opacity: 0.6; }
+  .check-circle { width: 24px; height: 24px; border-radius: 50%; background: var(--surface2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .check-circle.done { background: var(--good); }
+
+  .exercise-row { display: flex; justify-content: space-between; font-size: 13px; color: #B7BFC6; margin-bottom: 4px; gap: 8px; }
+  .info-panel { font-size: 12px; color: var(--muted); background: var(--surface2); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; line-height: 1.5; }
+  .day-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 8px 14px; margin-bottom: 6px; }
+  .plan-toggle { border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; background: var(--surface2); color: var(--muted); margin-left: 6px; }
+  .plan-toggle.active { background: var(--good); color: var(--bg); }
+
+  .daily-item { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--surface); border: 1px solid transparent; border-radius: 12px; padding: 14px 16px; width: 100%; color: var(--text); margin-bottom: 8px; }
+  .daily-item.done { border-color: var(--good); }
+  .daily-item .check-circle.done { background: var(--good); }
+  .daily-item span.label { font-size: 14px; flex: 1; }
+  .daily-item.done span.label { opacity: 0.7; text-decoration: line-through; }
+
+  .delta-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; }
+
+  .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .photo-tile { aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: var(--surface); position: relative; }
+  .photo-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-date { position: absolute; bottom: 4px; left: 4px; font-size: 9px; background: rgba(0,0,0,0.6); padding: 2px 5px; border-radius: 4px; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; z-index: 20; }
+  .modal-sheet { background: var(--surface); width: 100%; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; }
+  .modal-sheet label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .modal-sheet input[type="number"] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 15px; }
+  .measure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+
+  .bottomnav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--surface2); display: flex; padding: 8px 4px calc(8px + env(safe-area-inset-bottom)); }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; padding: 8px 0; color: var(--muted2); }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn span { font-size: 10px; font-weight: 600; }
+
+  .hidden { display: none !important; }
+  .save-error { position: fixed; bottom: 74px; left: 20px; right: 20px; background: #3A2222; color: #F0B8B8; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+
+  svg { display: block; }
+</style>
+</head>
+<body>
+
+<div id="hero" class="hero"></div>
+<div id="content" class="content"></div>
+<div id="saveError" class="save-error hidden">Speichern hat nicht geklappt. Bitte nochmal versuchen.</div>
+
+<div id="addModal" class="modal-overlay hidden">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="row-between" style="margin-bottom:16px;">
+      <span style="font-weight:600;font-size:15px;" id="modalDateLabel"></span>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--muted);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <label>Gewicht (kg) *</label>
+    <input type="number" inputmode="decimal" id="formWeight" placeholder="z.B. 68.5" style="margin-bottom:14px;" oninput="updateSaveBtn()" />
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Umfänge in cm (optional)</div>
+    <div class="measure-grid" id="measureGrid"></div>
+    <button class="btn-accent" id="saveEntryBtn" style="width:100%;justify-content:center;padding:13px;font-size:14px;" onclick="handleAddEntry()" disabled>Speichern</button>
+  </div>
+</div>
+
+<input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)" />
+
+<div id="goalModal" class="modal-overlay hidden">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="row-between" style="margin-bottom:16px;">
+      <span style="font-weight:600;font-size:15px;">Neues Ziel</span>
+      <button onclick="closeGoalModal()" style="background:none;border:none;color:var(--muted);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <label>Bezeichnung (optional)</label>
+    <input type="text" id="goalLabel" placeholder="z.B. Halten bis Weihnachten" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:15px;margin-bottom:14px;" />
+    <label>Zielgewicht (kg) *</label>
+    <input type="number" inputmode="decimal" id="goalTargetWeight" placeholder="z.B. 60" style="margin-bottom:14px;" oninput="updateGoalSaveBtn()" />
+    <label>Zieldatum *</label>
+    <input type="date" id="goalTargetDate" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:15px;margin-bottom:14px;" oninput="updateGoalSaveBtn()" />
+    <p style="font-size:11px;color:var(--muted2);margin:0 0 14px;line-height:1.5;">Startgewicht ist dein aktuellster Eintrag. Das neue Ziel wird ab heute aktiv und löst das bisherige als Countdown ab.</p>
+    <button class="btn-accent" id="saveGoalBtn" style="width:100%;justify-content:center;padding:13px;font-size:14px;" onclick="handleAddGoal()" disabled>Speichern</button>
+  </div>
+</div>
+
+<script>
+const START_WEIGHT = 70;
+const GOAL_LOSS = 8;
+const TARGET_WEIGHT = START_WEIGHT - GOAL_LOSS;
+const TOTAL_DAYS = 65;
+
+const MEASURE_FIELDS = [
+  { key: "waist", label: "Taille" },
+  { key: "hip", label: "Hüfte" },
+  { key: "thighR", label: "Oberschenkel re." },
+  { key: "thighL", label: "Oberschenkel li." },
+  { key: "calfR", label: "Wade re." },
+  { key: "calfL", label: "Wade li." },
+];
+
+const PHASE_LENGTH_DAYS = 42; // 6 Wochen
+
+const PHASES = [
+  {
+    label: "Phase 1",
+    A: {
+      label: "Ganzkörper A",
+      warmup: { totalDuration: "5 Min.", steps: [
+        { name: "Schattenboxen", duration: "2 Min." },
+        { name: "Seilspringen", duration: "2 Min." },
+        { name: "Armkreisen und leichte Kniebeugen", duration: "1 Min." },
+      ] },
+      supersets: [
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Kurzhantel-Kniebeugen", tag: "Bein", reps: "12" },
+          { name: "Kurzhantel-Schulterdrücken", tag: "Oberkörper", reps: "12" },
+        ]},
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Kurzhantel Hüftheben (Glute Bridge)", tag: "Bein", reps: "15" },
+          { name: "Einarmiges Rudern mit Kurzhantel", tag: "Oberkörper", reps: "12 /Seite" },
+        ]},
+        { rounds: 3, rest: "30 Sek. nach jeder Runde", exercises: [
+          { name: "Wadenheben mit Kurzhanteln", tag: "Bein", reps: "15" },
+          { name: "Band Pull-Apart (langes Loop-Band)", tag: "Oberkörper", reps: "15" },
+        ]},
+      ],
+      finisher: { rounds: 2, exercises: [
+        { name: "Medizinball Diagonal-Chop", reps: "10 /Seite" },
+        { name: "Plank", reps: "30 Sek." },
+      ]},
+      estMinutes: 32,
+    },
+    B: {
+      label: "Ganzkörper B",
+      warmup: { totalDuration: "5 Min.", steps: [
+        { name: "Schattenboxen", duration: "2 Min." },
+        { name: "Seilspringen", duration: "2 Min." },
+        { name: "Armkreisen und leichte Kniebeugen", duration: "1 Min." },
+      ] },
+      supersets: [
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Kreuzheben mit Kurzhanteln", tag: "Bein", reps: "10" },
+          { name: "Liegestütze oder Kurzhantel-Brustpresse (Boden)", tag: "Oberkörper", reps: "10" },
+        ]},
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Rückwärtige Ausfallschritte mit Kurzhanteln", tag: "Bein", reps: "10 /Bein" },
+          { name: "Kurzhantel Bizeps-Curls", tag: "Oberkörper", reps: "12" },
+        ]},
+        { rounds: 3, rest: "30 Sek. nach jeder Runde", exercises: [
+          { name: "Seitliche Band-Walks (kurzes Loop-Band)", tag: "Bein", reps: "12 /Seite" },
+          { name: "Rudern mit langem Loop-Band", tag: "Oberkörper", reps: "15" },
+        ]},
+      ],
+      finisher: { rounds: 2, exercises: [
+        { name: "Medizinball Russian Twist", reps: "16" },
+        { name: "Seitlicher Unterarmstütz", reps: "20 Sek. /Seite" },
+      ]},
+      estMinutes: 32,
+    },
+  },
+  {
+    label: "Phase 2",
+    A: {
+      label: "Ganzkörper A",
+      warmup: { totalDuration: "5 Min.", steps: [
+        { name: "Schattenboxen", duration: "2 Min." },
+        { name: "Seilspringen", duration: "2 Min." },
+        { name: "Armkreisen und leichte Kniebeugen", duration: "1 Min." },
+      ] },
+      supersets: [
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Kurzhantel Sumo-Kniebeugen", tag: "Bein", reps: "12" },
+          { name: "Kurzhantel Rudern beidarmig vorgebeugt", tag: "Oberkörper", reps: "12" },
+        ]},
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Bulgarian Split Squat mit Kurzhantel", tag: "Bein", reps: "10 /Bein" },
+          { name: "Kurzhantel-Brustpresse (Boden)", tag: "Oberkörper", reps: "10" },
+        ]},
+        { rounds: 3, rest: "30 Sek. nach jeder Runde", exercises: [
+          { name: "Standing Kurzhantel Wadenheben einbeinig", tag: "Bein", reps: "12 /Bein" },
+          { name: "Band Face Pull (langes Loop-Band)", tag: "Oberkörper", reps: "15" },
+        ]},
+      ],
+      finisher: { rounds: 2, exercises: [
+        { name: "Medizinball Diagonal-Chop", reps: "10 /Seite" },
+        { name: "Seitlicher Unterarmstütz", reps: "20 Sek. /Seite" },
+      ]},
+      estMinutes: 32,
+    },
+    B: {
+      label: "Ganzkörper B",
+      warmup: { totalDuration: "5 Min.", steps: [
+        { name: "Schattenboxen", duration: "2 Min." },
+        { name: "Seilspringen", duration: "2 Min." },
+        { name: "Armkreisen und leichte Kniebeugen", duration: "1 Min." },
+      ] },
+      supersets: [
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Kurzhantel Good Mornings", tag: "Bein", reps: "12" },
+          { name: "Kurzhantel Arnold Press", tag: "Oberkörper", reps: "10" },
+        ]},
+        { rounds: 3, rest: "40 Sek. nach jeder Runde", exercises: [
+          { name: "Step-Ups mit Kurzhantel", tag: "Bein", reps: "10 /Bein" },
+          { name: "Kurzhantel Trizeps-Kickback", tag: "Oberkörper", reps: "12 /Seite" },
+        ]},
+        { rounds: 3, rest: "30 Sek. nach jeder Runde", exercises: [
+          { name: "Kurzes Loop-Band Monster Walks", tag: "Bein", reps: "12 /Seite" },
+          { name: "Band Bizeps-Curl mit langem Loop-Band", tag: "Oberkörper", reps: "15" },
+        ]},
+      ],
+      finisher: { rounds: 2, exercises: [
+        { name: "Medizinball Russian Twist", reps: "16" },
+        { name: "Plank", reps: "30 Sek." },
+      ]},
+      estMinutes: 32,
+    },
+  },
+];
+
+const EXERCISE_INFO = {
+  "Schattenboxen": "Locker in die Knie gehen, Arme wechselnd nach vorne boxen, dabei ständig in Bewegung bleiben. Wärmt Schultern und Kreislauf auf, ganz ohne Sprünge oder Bodenkontakt-Geräusche.",
+  "Seilspringen": "Locker aus dem Fußgelenk springen, kleine Sprünge statt hoher Hüpfer, Ellbogen bleiben nah am Körper. Wer auf leise Sprünge achten möchte, springt auf dem Vorfuß statt mit der ganzen Sohle aufzukommen.",
+  "Armkreisen und leichte Kniebeugen": "Im Stehen die Arme groß nach vorne und hinten kreisen, dazwischen ein paar lockere, langsame Kniebeugen ohne Gewicht. Löst Schultern und Hüfte, bevor es mit den Hanteln weitergeht.",
+  "Kurzhantel-Kniebeugen": "Füße schulterbreit, Hanteln an den Schultern oder seitlich halten. Knie und Hüfte gleichzeitig beugen, Rücken gerade, bis die Oberschenkel etwa parallel zum Boden sind, dann hochdrücken.",
+  "Kurzhantel-Schulterdrücken": "Hanteln auf Schulterhöhe, Handflächen nach vorne. Arme nach oben strecken ohne ins Hohlkreuz zu fallen, dann kontrolliert wieder absenken.",
+  "Kurzhantel Hüftheben (Glute Bridge)": "Rückenlage, Füße aufgestellt, eine Hantel auf der Hüfte halten. Hüfte nach oben drücken bis Schultern, Hüfte und Knie eine Linie bilden, oben kurz halten, dann kontrolliert absenken.",
+  "Ausfallschritte mit Kurzhanteln": "Großer Schritt nach vorne, das hintere Knie senkt sich Richtung Boden, das vordere Knie bleibt über dem Fuß. Dann zurück in die Ausgangsposition drücken.",
+  "Einarmiges Rudern mit Kurzhantel": "Eine Hand und ein Knie auf einer Bank oder einem stabilen Stuhl abstützen. Mit der anderen Hand die Hantel zur Hüfte ziehen, Ellbogen eng am Körper führen.",
+  "Wadenheben mit Kurzhanteln": "Aufrecht stehen, Hanteln in den Händen. Auf die Zehenspitzen heben, oben kurz halten, dann langsam wieder absenken.",
+  "Band Pull-Apart (langes Loop-Band)": "Band mit beiden Händen auf Brusthöhe greifen, Arme gerade. Band auseinanderziehen bis es die Brust berührt, dann langsam zurückführen.",
+  "Medizinball Diagonal-Chop": "Ball diagonal von der Hüfte zur gegenüberliegenden Schulter führen, der Rumpf dreht dabei mit. Kontrolliert zurückführen, kein Wurf und kein Bodenkontakt, dadurch geräuscharm.",
+  "Plank": "Unterarme und Zehenspitzen am Boden, der Körper bildet eine gerade Linie von Kopf bis Ferse. Bauch anspannen, Hüfte weder durchhängen noch hochziehen.",
+  "Kreuzheben mit Kurzhanteln": "Hanteln vor den Oberschenkeln halten, Hüfte nach hinten schieben, Rücken gerade lassen. Hanteln nah am Körper entlang Richtung Boden führen, dann über die Hüfte wieder aufrichten.",
+  "Liegestütze oder Kurzhantel-Brustpresse (Boden)": "Liegestütz: Hände unter den Schultern, Körper bildet eine gerade Linie, Brust senkt sich Richtung Boden. Alternative am Boden liegend: Hanteln über der Brust nach oben drücken, Ellbogen berühren beim Absenken leicht den Boden.",
+  "Rückwärtige Ausfallschritte mit Kurzhanteln": "Wie ein normaler Ausfallschritt, nur geht der Schritt nach hinten statt nach vorne. Das hintere Knie sinkt Richtung Boden, dann zurück in den Stand.",
+  "Kurzhantel Bizeps-Curls": "Arme seitlich am Körper, Oberarme bleiben ruhig. Unterarme beugen die Hantel Richtung Schulter, dann kontrolliert absenken.",
+  "Seitliche Band-Walks (kurzes Loop-Band)": "Band um die Knöchel oder über den Oberschenkeln, leichte Kniebeuge-Haltung einnehmen. Seitliche Schritte gegen den Widerstand des Bandes machen.",
+  "Rudern mit langem Loop-Band": "Band unter beide Füße stellen oder um einen festen Punkt legen, Enden in den Händen. Arme ziehen das Band zur Hüfte, Ellbogen nach hinten führen.",
+  "Medizinball Russian Twist": "Im Sitzen, Oberkörper leicht zurückgelehnt, Ball vor dem Körper von einer Seite zur anderen führen. Für mehr Schwierigkeit die Füße leicht abheben.",
+  "Seitlicher Unterarmstütz": "Seitlage auf einem Unterarm, der Körper hebt sich zu einer geraden Linie. Hüfte nicht durchhängen lassen, Blick nach vorne.",
+  "Kurzhantel Sumo-Kniebeugen": "Breiter Stand, Zehen leicht nach außen gedreht, eine Hantel beidhändig vor dem Körper halten. In die Hocke gehen, Knie folgen der Zehenrichtung.",
+  "Kurzhantel Rudern beidarmig vorgebeugt": "Oberkörper nach vorne beugen, Rücken gerade halten. Beide Hanteln gleichzeitig zur Hüfte ziehen, Schulterblätter zusammenführen.",
+  "Bulgarian Split Squat mit Kurzhantel": "Hinterer Fuß erhöht auf einem Stuhl oder einer Bank ablegen. Das vordere Bein führt die Kniebeugen-Bewegung aus, das hintere Knie sinkt Richtung Boden.",
+  "Kurzhantel-Brustpresse (Boden)": "Rückenlage, Hanteln über der Brust nach oben drücken. Ellbogen berühren beim Absenken leicht den Boden, das dämpft die Bewegung nach unten ab.",
+  "Standing Kurzhantel Wadenheben einbeinig": "Auf einem Bein stehend, Hantel in der gegenüberliegenden Hand halten. Auf die Zehenspitze heben, langsam absenken, dann Seite wechseln.",
+  "Band Face Pull (langes Loop-Band)": "Band auf Augenhöhe befestigen oder greifen, zum Gesicht ziehen. Ellbogen hoch führen, Schulterblätter am Ende zusammenziehen.",
+  "Kurzhantel Good Mornings": "Hantel auf den Schultern wie bei Kniebeugen halten. Hüfte nach hinten schieben, Oberkörper senkt sich nach vorne, Rücken bleibt gerade, dann aufrichten.",
+  "Kurzhantel Arnold Press": "Hanteln vor den Schultern mit Handflächen zum Körper. Beim Hochdrücken die Handflächen nach außen drehen, oben strecken, dann zurückdrehen.",
+  "Step-Ups mit Kurzhantel": "Auf eine stabile Erhöhung steigen, ein Bein führt die Bewegung. Oben kurz stehen bleiben, dann kontrolliert zurück nach unten.",
+  "Kurzhantel Trizeps-Kickback": "Oberkörper leicht vorgebeugt, Oberarm bleibt am Körper. Unterarm nach hinten strecken bis der Arm gerade ist, dann zurückführen.",
+  "Kurzes Loop-Band Monster Walks": "Band um die Knöchel, leichte Hocke einnehmen. Große Schritte diagonal nach vorne machen, abwechselnd links und rechts.",
+  "Band Bizeps-Curl mit langem Loop-Band": "Auf die Mitte des Bandes stellen, Enden in den Händen halten. Unterarme zur Schulter beugen, dann langsam absenken.",
+};
+
+const DAILY_ITEMS = [
+  { key: "meal", label: "Autopilot-Mahlzeiten (Frühstück/Mittag ohne Nachdenken)" },
+  { key: "noSweets", label: "Keine Süßigkeiten im Haus angerührt" },
+  { key: "proteinSnack", label: "Proteinsnack zwischen 14:00 und 16:00 Uhr" },
+  { key: "workout", label: "Training oder bewusste Bewegung" },
+];
+const EXTRA_ITEMS = [
+  { key: "water", label: "2 Liter Wasser getrunken" },
+  { key: "sleep", label: "7–9 Stunden Schlaf" },
+  { key: "mood", label: "Gute Laune-Moment" },
+  { key: "period", label: "Periode" },
+];
+
+const ICONS = {
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>',
+  plus: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>',
+  camera: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  trend: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>',
+  dumbbell: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 3l3 3-3.5 3.5-3-3zM3 18l3 3 3.5-3.5-3-3z"/></svg>',
+  up: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  down: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>',
+  minus: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg>',
+  info: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+};
+
+let state = {
+  ready: false,
+  goals: [],
+  entries: [],
+  workoutLog: {},
+  dailyToday: {},
+  photoIndex: [],
+  photoUrls: {},
+  tab: "progress",
+  uploading: false,
+};
+let charts = {};
+
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function addDays(dateStr, days) { const d = new Date(dateStr); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
+function fmtDate(iso) { return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }); }
+function fmtDateLong(iso) { return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "long", year: "numeric" }); }
+function daysBetween(a, b) { return Math.round((new Date(a) - new Date(b)) / 86400000); }
+const today = todayISO();
+
+async function safeGet(key) {
+  try { const r = await window.storage.get(key); return r ? r.value : null; } catch { return null; }
+}
+async function safeSet(key, value) {
+  try { const r = await window.storage.set(key, value); if (!r) showSaveError(); return r; }
+  catch { showSaveError(); return null; }
+}
+function showSaveError() {
+  const el = document.getElementById("saveError");
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 3500);
+}
+
+async function init() {
+  let g = await safeGet("goals");
+  g = g ? JSON.parse(g) : null;
+  if (!g) {
+    // Migration from older single-profile version, or first-time setup
+    let old = await safeGet("profile");
+    old = old ? JSON.parse(old) : null;
+    if (old) {
+      g = [{ id: "goal-1", label: "", startDate: old.startDate, targetDate: old.targetDate, startWeight: old.startWeight, targetWeight: old.startWeight - old.goalLoss }];
+    } else {
+      g = [{ id: "goal-1", label: "", startDate: today, targetDate: addDays(today, TOTAL_DAYS), startWeight: START_WEIGHT, targetWeight: TARGET_WEIGHT }];
+    }
+    await safeSet("goals", JSON.stringify(g));
+  }
+  state.goals = g;
+
+  const e = await safeGet("entries");
+  state.entries = e ? JSON.parse(e) : [];
+
+  const w = await safeGet("workoutLog");
+  let wl = w ? JSON.parse(w) : {};
+  let migrated = false;
+  Object.keys(wl).forEach(d => {
+    if (typeof wl[d] === "string") { wl[d] = { [wl[d]]: true }; migrated = true; }
+  });
+  if (migrated) await safeSet("workoutLog", JSON.stringify(wl));
+  state.workoutLog = wl;
+
+  const d = await safeGet(`daily:${today}`);
+  state.dailyToday = d ? JSON.parse(d) : {};
+
+  const pi = await safeGet("photoIndex");
+  state.photoIndex = pi ? JSON.parse(pi) : [];
+
+  state.ready = true;
+  renderAll();
+}
+
+function sortedEntries() { return [...state.entries].sort((a, b) => (a.date < b.date ? -1 : 1)); }
+
+function latestInWindow(field, startOffset, endOffset) {
+  const from = addDays(today, -endOffset);
+  const to = addDays(today, -startOffset);
+  const se = sortedEntries();
+  const inWindow = se.filter(e => e.date >= from && e.date <= to && e[field] != null && e[field] !== "");
+  if (!inWindow.length) return null;
+  return inWindow[inWindow.length - 1][field];
+}
+
+function renderAll() {
+  if (!state.ready) return;
+  renderHero();
+  renderContent();
+  renderNav();
+}
+
+function activeGoal() { return state.goals[state.goals.length - 1]; }
+function pastGoals() { return state.goals.slice(0, -1); }
+
+function renderHero() {
+  const g = activeGoal();
+  const daysTotal = Math.max(1, daysBetween(g.targetDate, g.startDate));
+  const daysLeft = Math.max(0, daysBetween(g.targetDate, today));
+  const daysElapsed = daysTotal - daysLeft;
+  const se = sortedEntries();
+  const latestWeight = se.length ? se[se.length - 1].weight : g.startWeight;
+  const lost = +(g.startWeight - latestWeight).toFixed(1);
+  const remaining = +(latestWeight - g.targetWeight).toFixed(1);
+
+  let segs = "";
+  const totalWeeks = Math.ceil(daysTotal / 7);
+  for (let wI = 0; wI < totalWeeks; wI++) {
+    const weekStart = wI * 7;
+    const filled = daysElapsed - weekStart;
+    const frac = Math.min(1, Math.max(0, filled / 7));
+    segs += `<div class="week-seg"><div class="week-fill" style="width:${frac * 100}%"></div></div>`;
+  }
+
+  document.getElementById("hero").innerHTML = `
+    <div class="hero-label">${g.label ? g.label + " · " : ""}Ziel: ${fmtDateLong(g.targetDate)}</div>
+    <div class="hero-countdown">
+      <span class="mono hero-days">${daysLeft}</span>
+      <span class="hero-days-label">Tage übrig</span>
+    </div>
+    <div class="week-strip">${segs}</div>
+    <div class="week-caption"><span>Woche 1</span><span>Woche ${totalWeeks}</span></div>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">Abgenommen</div><div class="mono stat-value" style="color:var(--good)">${lost} kg</div></div>
+      <div class="stat-card"><div class="stat-label">Noch offen</div><div class="mono stat-value">${remaining > 0 ? remaining : 0} kg</div></div>
+      <div class="stat-card"><div class="stat-label">Aktuell</div><div class="mono stat-value">${latestWeight} kg</div></div>
+    </div>
+  `;
+}
+
+function renderNav() {
+  const tabs = [
+    { key: "progress", label: "Verlauf", icon: ICONS.trend },
+    { key: "training", label: "Training", icon: ICONS.dumbbell },
+    { key: "photos", label: "Fotos", icon: ICONS.camera },
+    { key: "today", label: "Heute", icon: ICONS.check },
+  ];
+  let html = "";
+  tabs.forEach(t => {
+    html += `<button class="nav-btn ${state.tab === t.key ? "active" : ""}" onclick="setTab('${t.key}')">${t.icon}<span>${t.label}</span></button>`;
+  });
+  let nav = document.getElementById("bottomnav");
+  if (!nav) {
+    nav = document.createElement("div");
+    nav.id = "bottomnav";
+    nav.className = "bottomnav";
+    document.body.appendChild(nav);
+  }
+  nav.innerHTML = html;
+}
+
+function setTab(t) { state.tab = t; renderAll(); }
+
+function deltaBadgeHTML(delta, unit) {
+  if (delta === null || delta === undefined) return `<span style="font-size:11px;color:var(--muted2)">—</span>`;
+  const flat = Math.abs(delta) < 0.05;
+  const good = delta < 0;
+  const color = flat ? "var(--muted)" : good ? "var(--good)" : "var(--bad)";
+  const icon = flat ? ICONS.minus : delta < 0 ? ICONS.down : ICONS.up;
+  return `<span class="delta-badge" style="color:${color}">${icon}${Math.abs(delta).toFixed(1)}${unit}</span>`;
+}
+
+function renderContent() {
+  const el = document.getElementById("content");
+  if (state.tab === "progress") el.innerHTML = progressHTML();
+  else if (state.tab === "training") el.innerHTML = trainingHTML();
+  else if (state.tab === "today") el.innerHTML = todayHTML();
+  else if (state.tab === "photos") el.innerHTML = photosHTML();
+
+  if (state.tab === "progress") setTimeout(drawProgressCharts, 0);
+  if (state.tab === "photos") loadAllPhotos();
+}
+
+function progressHTML() {
+  const se = sortedEntries();
+  const g = activeGoal();
+
+  const thisWeekWeight = latestInWindow("weight", 0, 6);
+  const lastWeekWeight = latestInWindow("weight", 7, 13);
+  const weightDelta = (thisWeekWeight != null && lastWeekWeight != null) ? +(thisWeekWeight - lastWeekWeight).toFixed(1) : null;
+
+  const measureComparison = MEASURE_FIELDS.map(f => {
+    const thisW = latestInWindow(f.key, 0, 6);
+    const lastW = latestInWindow(f.key, 7, 13);
+    const delta = (thisW != null && lastW != null) ? +(thisW - lastW).toFixed(1) : null;
+    return { ...f, thisW, lastW, delta };
+  });
+  const hasMeasureData = measureComparison.some(m => m.thisW != null || m.lastW != null);
+
+  let html = `
+    <div class="row-between">
+      <h2 class="section-title">Verlauf</h2>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-accent" style="background:var(--surface2);color:var(--text);" onclick="openGoalModal()">${ICONS.plus} Ziel</button>
+        <button class="btn-accent" onclick="openModal()">${ICONS.plus} Eintrag</button>
+      </div>
+    </div>
+  `;
+
+  if (se.length >= 2) {
+    html += `<div class="chart-card"><canvas id="weightChart" height="180"></canvas></div>`;
+  }
+
+  html += `<h3 class="subsection-title">Vorwoche vs. diese Woche</h3>`;
+  if (weightDelta === null) {
+    html += `<div class="empty-note">Noch nicht genug Einträge für einen Wochenvergleich. Trag an zwei Tagen in unterschiedlichen Wochen dein Gewicht ein.</div>`;
+  } else {
+    html += `
+      <div class="chart-card">
+        <div class="row-between" style="padding:0 10px 8px;margin-bottom:0;">
+          <span style="font-size:13px;">Gewicht</span>
+          ${deltaBadgeHTML(weightDelta, "kg")}
+        </div>
+        <canvas id="weightCompareChart" height="90"></canvas>
+      </div>
+    `;
+  }
+
+  if (hasMeasureData) {
+    html += `
+      <div class="chart-card" style="margin-bottom:20px;">
+        <div style="font-size:13px;padding:0 10px 8px;">Zentimeter im Vergleich</div>
+        <canvas id="cmCompareChart" height="220"></canvas>
+        <div style="display:flex;flex-direction:column;gap:6px;padding:10px 10px 4px;">
+          ${measureComparison.filter(m => m.delta !== null).map(m => `
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#B7BFC6;">
+              <span>${m.label}</span>${deltaBadgeHTML(m.delta, "cm")}
+            </div>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  html += `<h3 class="subsection-title">Etappenziele</h3><div style="margin-bottom:20px;">`;
+  const latestWeight = se.length ? se[se.length - 1].weight : g.startWeight;
+  const lost = +(g.startWeight - latestWeight).toFixed(1);
+  const totalLoss = +(g.startWeight - g.targetWeight).toFixed(1);
+  const steps = [];
+  if (totalLoss > 0) {
+    for (let s = 2; s < totalLoss; s += 2) steps.push(s);
+    steps.push(totalLoss);
+  }
+  steps.forEach(m => {
+    const achieved = lost >= m - 0.05;
+    html += `
+      <div class="milestone ${achieved ? "" : "pending"}">
+        <div class="check-circle ${achieved ? "done" : ""}">${achieved ? ICONS.check : ""}</div>
+        <span style="font-size:14px;flex:1;">${m} kg weniger</span>
+        <span class="mono" style="font-size:12px;color:var(--muted2)">${(g.startWeight - m).toFixed(1)} kg</span>
+      </div>
+    `;
+  });
+  html += `</div>`;
+
+  const past = pastGoals();
+  if (past.length) {
+    html += `<h3 class="subsection-title">Bisherige Ziele</h3><div style="margin-bottom:20px;display:flex;flex-direction:column;gap:6px;">`;
+    past.forEach(pg => {
+      html += `<div style="background:var(--surface);border-radius:10px;padding:"10px 14px";padding:10px 14px;font-size:13px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span>${pg.label || "Ziel"}</span>
+          <span class="mono" style="color:var(--muted2);font-size:12px;">${pg.startWeight}kg → ${pg.targetWeight}kg</span>
+        </div>
+        <div style="color:var(--muted2);font-size:11px;margin-top:2px;">${fmtDate(pg.startDate)} – ${fmtDate(pg.targetDate)}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  const allWeights = se.map(e => e.weight).concat([g.startWeight, g.targetWeight]);
+  const chartMin = Math.min(...allWeights) - 1;
+  const chartMax = Math.max(...allWeights) + 1;
+
+  window.__progressData = { se, thisWeekWeight, lastWeekWeight, measureComparison, chartMin, chartMax };
+  return html;
+}
+
+function drawProgressCharts() {
+  const { se, thisWeekWeight, lastWeekWeight, measureComparison, chartMin, chartMax } = window.__progressData || {};
+  Object.values(charts).forEach(c => c && c.destroy && c.destroy());
+  charts = {};
+
+  const weightCanvas = document.getElementById("weightChart");
+  if (weightCanvas && se && se.length >= 2) {
+    charts.weight = new Chart(weightCanvas, {
+      type: "line",
+      data: {
+        labels: se.map(e => fmtDate(e.date)),
+        datasets: [
+          { label: "Gewicht", data: se.map(e => e.weight), borderColor: "#C9713F", backgroundColor: "#C9713F", tension: 0.3, pointRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: "#262C33" }, ticks: { color: "#6E777F", font: { size: 10 } } },
+          y: { min: chartMin, max: chartMax, grid: { color: "#262C33" }, ticks: { color: "#6E777F", font: { size: 10 } } },
+        },
+      },
+    });
+  }
+
+  const wcCanvas = document.getElementById("weightCompareChart");
+  if (wcCanvas && thisWeekWeight != null && lastWeekWeight != null) {
+    charts.weightCompare = new Chart(wcCanvas, {
+      type: "bar",
+      data: {
+        labels: ["Gewicht"],
+        datasets: [
+          { label: "Vorwoche", data: [lastWeekWeight], backgroundColor: "#4A535B", borderRadius: 4 },
+          { label: "Diese Woche", data: [thisWeekWeight], backgroundColor: "#C9713F", borderRadius: 4 },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { min: chartMin, max: chartMax, display: false },
+          y: { display: false },
+        },
+      },
+    });
+  }
+
+  const cmCanvas = document.getElementById("cmCompareChart");
+  const cmData = (measureComparison || []).filter(m => m.thisW != null || m.lastW != null);
+  if (cmCanvas && cmData.length) {
+    charts.cmCompare = new Chart(cmCanvas, {
+      type: "bar",
+      data: {
+        labels: cmData.map(m => m.label),
+        datasets: [
+          { label: "Vorwoche", data: cmData.map(m => m.lastW), backgroundColor: "#4A535B", borderRadius: 3 },
+          { label: "Diese Woche", data: cmData.map(m => m.thisW), backgroundColor: "#C9713F", borderRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#B7BFC6", font: { size: 11 } } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: "#6E777F", font: { size: 9 } } },
+          y: { grid: { color: "#262C33" }, ticks: { color: "#6E777F", font: { size: 10 } } },
+        },
+      },
+    });
+  }
+}
+
+function currentPhaseInfo() {
+  const trainingStart = state.goals[0].startDate;
+  const daysSinceStart = Math.max(0, daysBetween(today, trainingStart));
+  const cycleLength = PHASE_LENGTH_DAYS * PHASES.length;
+  const posInCycle = daysSinceStart % cycleLength;
+  const phaseIndex = Math.floor(posInCycle / PHASE_LENGTH_DAYS);
+  const daysIntoPhase = posInCycle % PHASE_LENGTH_DAYS;
+  const daysUntilChange = PHASE_LENGTH_DAYS - daysIntoPhase;
+  return { phaseIndex, daysUntilChange };
+}
+
+function exerciseRowHTML(ex, prefix, tag) {
+  const infoId = `info-${prefix}-${ex.name.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const info = EXERCISE_INFO[ex.name];
+  return `
+    <div>
+      <div class="exercise-row" style="align-items:center;">
+        <span>${tag ? `<span class="mono" style="color:var(--accent);margin-right:4px;">${tag}</span>` : ""}${ex.name}${ex.tag ? ` <span style="color:var(--muted2);font-size:11px;">(${ex.tag})</span>` : ""}</span>
+        <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;margin-left:10px;">
+          <span class="mono" style="color:var(--muted);">${ex.reps || ""}</span>
+          ${info ? `<button onclick="toggleInfo('${infoId}')" style="background:none;border:none;color:var(--muted2);padding:0;display:flex;">${ICONS.info}</button>` : ""}
+        </span>
+      </div>
+      ${info ? `<div id="${infoId}" class="info-panel hidden">${info}</div>` : ""}
+    </div>
+  `;
+}
+
+function trainingHTML() {
+  const { phaseIndex, daysUntilChange } = currentPhaseInfo();
+  const phase = PHASES[phaseIndex];
+
+  let html = `<h2 class="section-title">Trainingspläne</h2>
+    <p style="font-size:12px;color:var(--muted2);margin:-6px 0 12px;line-height:1.5;">
+      Aufbau nach dem Warm-up: Supersätze, immer eine Bein- mit einer Oberkörper-Übung kombiniert, direkt hintereinander ohne Pause dazwischen. Erst nach beiden Übungen kommt die Pause. Jede Einheit dauert insgesamt etwa 30 Minuten. Tipp auf das ⓘ bei einer Übung für eine kurze Erklärung.
+    </p>
+    <div style="display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:10px;padding:10px 14px;margin-bottom:16px;">
+      <span style="font-size:13px;font-weight:600;">${phase.label}</span>
+      <span class="mono" style="font-size:11px;color:var(--muted2);">nächster Wechsel in ${daysUntilChange} Tagen</span>
+    </div>
+  `;
+
+  ["A", "B"].forEach(key => {
+    const w = phase[key];
+    html += `<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:var(--accent)">${ICONS.dumbbell}</span>
+          <span style="font-weight:600;font-size:15px;">${w.label}</span>
+        </div>
+        <span class="mono" style="font-size:11px;color:var(--muted2);">~${w.estMinutes} Min.</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted2);margin-bottom:5px;">Warm-up · ${w.warmup.totalDuration}</div>
+      <div style="font-style:italic;">
+        ${w.warmup.steps.map((s, i) => exerciseRowHTML({ name: s.name, reps: s.duration }, `${key}-warmup-${i}`, null)).join("")}
+      </div>
+      <div style="height:1px;background:var(--surface2);margin:10px 0;"></div>
+    `;
+    w.supersets.forEach((ss, i) => {
+      html += `<div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--muted2);margin-bottom:5px;">Supersatz ${i + 1} · ${ss.rounds} Runden · ${ss.rest}</div>`;
+      ss.exercises.forEach((ex, j) => {
+        html += exerciseRowHTML(ex, `${key}-${phaseIndex}-${i}-${j}`, `${String.fromCharCode(65 + i)}${j + 1}`);
+      });
+      html += `</div>`;
+    });
+    if (w.finisher) {
+      html += `<div style="height:1px;background:var(--surface2);margin:10px 0;"></div>
+        <div style="font-size:11px;color:var(--muted2);margin-bottom:5px;">Finisher · ${w.finisher.rounds} Runden</div>`;
+      w.finisher.exercises.forEach((ex, j) => {
+        html += exerciseRowHTML(ex, `${key}-finisher-${phaseIndex}-${j}`, null);
+      });
+    }
+    html += `</div>`;
+  });
+
+  html += `<h3 class="subsection-title" style="margin-top:18px;">Letzte 7 Tage</h3>`;
+  for (let i = -6; i <= 0; i++) {
+    const d = addDays(today, i);
+    const label = d === today ? "Heute" : fmtDate(d);
+    html += `<div class="day-row">
+      <span class="mono" style="font-size:12px;color:var(--muted);min-width:60px;">${label}</span>
+      <div style="display:flex;flex:1;justify-content:flex-end;">
+        <button class="plan-toggle ${state.workoutLog[d] && state.workoutLog[d].A ? "active" : ""}" onclick="toggleWorkoutDay('${d}','A')">A</button>
+        <button class="plan-toggle ${state.workoutLog[d] && state.workoutLog[d].B ? "active" : ""}" onclick="toggleWorkoutDay('${d}','B')">B</button>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function toggleInfo(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle("hidden");
+}
+
+function todayHTML() {
+  let html = `<h2 class="section-title" style="margin-bottom:4px;">Heute</h2>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">${fmtDateLong(today)}</p>`;
+  DAILY_ITEMS.forEach(item => {
+    const done = !!state.dailyToday[item.key];
+    html += `<button class="daily-item ${done ? "done" : ""}" onclick="toggleDaily('${item.key}')">
+      <div class="check-circle ${done ? "done" : ""}">${done ? ICONS.check : ""}</div>
+      <span class="label">${item.label}</span>
+    </button>`;
+  });
+  html += `<h3 class="subsection-title" style="margin-top:12px;">Sonstiges</h3>`;
+  EXTRA_ITEMS.forEach(item => {
+    const done = !!state.dailyToday[item.key];
+    html += `<button class="daily-item ${done ? "done" : ""}" onclick="toggleDaily('${item.key}')">
+      <div class="check-circle ${done ? "done" : ""}">${done ? ICONS.check : ""}</div>
+      <span class="label">${item.label}</span>
+    </button>`;
+  });
+  return html;
+}
+
+function photosHTML() {
+  let html = `
+    <div class="row-between" style="margin-bottom:6px;">
+      <h2 class="section-title" style="margin:0;">Fotoverlauf</h2>
+      <button class="btn-accent" onclick="document.getElementById('photoInput').click()" ${state.uploading ? "disabled" : ""}>
+        ${ICONS.camera} ${state.uploading ? "Lädt…" : "Foto"}
+      </button>
+    </div>
+    <p style="font-size:12px;color:var(--muted2);margin:0 0 16px;line-height:1.5;">
+      Fotos werden komprimiert in deinem persönlichen App-Speicher abgelegt, an dein Konto gebunden, nicht öffentlich einsehbar. Das ist aber kein reiner Gerätespeicher wie ein Fotoalbum, sondern läuft über den Speicher dieser App.
+    </p>
+  `;
+  if (state.photoIndex.length === 0) {
+    html += `<div style="background:var(--surface);border-radius:10px;padding:20px;text-align:center;color:var(--muted2);font-size:13px;">Noch keine Fotos. Tipp den Button oben, um dein erstes Verlaufsfoto zu machen.</div>`;
+  } else {
+    html += `<div class="photo-grid">`;
+    [...state.photoIndex].reverse().forEach(p => {
+      html += `<div class="photo-tile" id="phototile-${p.id}"><span class="photo-date">${fmtDate(p.date)}</span></div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
+}
+
+async function loadAllPhotos() {
+  for (const p of state.photoIndex) {
+    if (state.photoUrls[p.id]) {
+      setPhotoTileImg(p.id, state.photoUrls[p.id]);
+      continue;
+    }
+    const val = await safeGet(`photo:${p.id}`);
+    if (val) {
+      state.photoUrls[p.id] = val;
+      setPhotoTileImg(p.id, val);
+    }
+  }
+}
+function setPhotoTileImg(id, url) {
+  const tile = document.getElementById(`phototile-${id}`);
+  if (tile && !tile.querySelector("img")) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "Verlaufsfoto";
+    tile.prepend(img);
+  }
+}
+
+function resizeImage(file, maxWidth = 480, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePhotoUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  state.uploading = true;
+  renderContent();
+  try {
+    const dataUrl = await resizeImage(file);
+    const id = `${today}-${Date.now()}`;
+    await safeSet(`photo:${id}`, dataUrl);
+    state.photoIndex = [...state.photoIndex, { id, date: today }];
+    await safeSet("photoIndex", JSON.stringify(state.photoIndex));
+    state.photoUrls[id] = dataUrl;
+  } catch {
+    showSaveError();
+  } finally {
+    state.uploading = false;
+    event.target.value = "";
+    renderContent();
+  }
+}
+
+function openModal() {
+  document.getElementById("modalDateLabel").textContent = `Neuer Eintrag · ${fmtDate(today)}`;
+  document.getElementById("formWeight").value = "";
+  const grid = document.getElementById("measureGrid");
+  grid.innerHTML = MEASURE_FIELDS.map(f => `
+    <div>
+      <label>${f.label}</label>
+      <input type="number" inputmode="decimal" id="measure-${f.key}" placeholder="–" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:14px;" />
+    </div>
+  `).join("");
+  updateSaveBtn();
+  document.getElementById("addModal").classList.remove("hidden");
+}
+function closeModal() { document.getElementById("addModal").classList.add("hidden"); }
+function updateSaveBtn() {
+  const w = document.getElementById("formWeight").value;
+  document.getElementById("saveEntryBtn").disabled = !w;
+}
+
+async function handleAddEntry() {
+  const wRaw = document.getElementById("formWeight").value;
+  const w = parseFloat(String(wRaw).replace(",", "."));
+  if (!w || w <= 0) return;
+  const entry = { id: `${today}-${Date.now()}`, date: today, weight: w };
+  MEASURE_FIELDS.forEach(f => {
+    const v = document.getElementById(`measure-${f.key}`).value;
+    entry[f.key] = v ? parseFloat(String(v).replace(",", ".")) : null;
+  });
+  state.entries = [...state.entries.filter(e => e.date !== today), entry];
+  await safeSet("entries", JSON.stringify(state.entries));
+  closeModal();
+  renderAll();
+}
+
+function openGoalModal() {
+  document.getElementById("goalLabel").value = "";
+  document.getElementById("goalTargetWeight").value = "";
+  document.getElementById("goalTargetDate").value = "";
+  updateGoalSaveBtn();
+  document.getElementById("goalModal").classList.remove("hidden");
+}
+function closeGoalModal() { document.getElementById("goalModal").classList.add("hidden"); }
+function updateGoalSaveBtn() {
+  const w = document.getElementById("goalTargetWeight").value;
+  const d = document.getElementById("goalTargetDate").value;
+  document.getElementById("saveGoalBtn").disabled = !w || !d;
+}
+async function handleAddGoal() {
+  const label = document.getElementById("goalLabel").value.trim();
+  const targetWeight = parseFloat(String(document.getElementById("goalTargetWeight").value).replace(",", "."));
+  const targetDate = document.getElementById("goalTargetDate").value;
+  if (!targetWeight || !targetDate) return;
+  const se = sortedEntries();
+  const startWeight = se.length ? se[se.length - 1].weight : activeGoal().targetWeight;
+  const newGoal = { id: `goal-${Date.now()}`, label, startDate: today, targetDate, startWeight, targetWeight };
+  state.goals = [...state.goals, newGoal];
+  await safeSet("goals", JSON.stringify(state.goals));
+  closeGoalModal();
+  renderAll();
+}
+
+function toggleWorkoutDay(dateStr, plan) {
+  const next = { ...state.workoutLog };
+  const day = { ...(next[dateStr] || {}) };
+  day[plan] = !day[plan];
+  if (!day.A && !day.B) delete next[dateStr];
+  else next[dateStr] = day;
+  state.workoutLog = next;
+  safeSet("workoutLog", JSON.stringify(next));
+  renderContent();
+}
+
+function toggleDaily(key) {
+  state.dailyToday = { ...state.dailyToday, [key]: !state.dailyToday[key] };
+  safeSet(`daily:${today}`, JSON.stringify(state.dailyToday));
+  renderContent();
+}
+
+init();
+</script>
+</body>
+</html>
