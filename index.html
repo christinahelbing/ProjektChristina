@@ -128,7 +128,7 @@
 <div id="goalModal" class="modal-overlay hidden">
   <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="row-between" style="margin-bottom:16px;">
-      <span style="font-weight:600;font-size:15px;">Neues Ziel</span>
+      <span style="font-weight:600;font-size:15px;" id="goalModalTitle">Neues Ziel</span>
       <button onclick="closeGoalModal()" style="background:none;border:none;color:var(--muted);">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
@@ -139,7 +139,7 @@
     <input type="number" inputmode="decimal" id="goalTargetWeight" placeholder="z.B. 60" style="margin-bottom:14px;" oninput="updateGoalSaveBtn()" />
     <label>Zieldatum *</label>
     <input type="date" id="goalTargetDate" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:15px;margin-bottom:14px;" oninput="updateGoalSaveBtn()" />
-    <p style="font-size:11px;color:var(--muted2);margin:0 0 14px;line-height:1.5;">Startgewicht ist dein aktuellster Eintrag. Das neue Ziel wird ab heute aktiv und löst das bisherige als Countdown ab.</p>
+    <p style="font-size:11px;color:var(--muted2);margin:0 0 14px;line-height:1.5;" id="goalHint">Startgewicht ist dein aktuellster Eintrag. Das neue Ziel wird ab heute aktiv und löst das bisherige als Countdown ab.</p>
     <button class="btn-accent" id="saveGoalBtn" style="width:100%;justify-content:center;padding:13px;font-size:14px;" onclick="handleAddGoal()" disabled>Speichern</button>
   </div>
 </div>
@@ -484,7 +484,13 @@ function renderHero() {
   }
 
   document.getElementById("hero").innerHTML = `
-    <div class="hero-label">${g.label ? g.label + " · " : ""}Ziel: ${fmtDateLong(g.targetDate)}</div>
+    <div class="hero-label" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+      <span>${g.label ? g.label + " · " : ""}Ziel: ${fmtDateLong(g.targetDate)}</span>
+      <button onclick="openGoalModal(true)" style="background:none;border:none;color:var(--muted2);display:flex;align-items:center;gap:3px;font-size:11px;padding:2px 0;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        bearbeiten
+      </button>
+    </div>
     <div class="hero-countdown">
       <span class="mono hero-days">${daysLeft}</span>
       <span class="hero-days-label">Tage übrig</span>
@@ -562,7 +568,7 @@ function progressHTML() {
     <div class="row-between">
       <h2 class="section-title">Verlauf</h2>
       <div style="display:flex;gap:8px;">
-        <button class="btn-accent" style="background:var(--surface2);color:var(--text);" onclick="openGoalModal()">${ICONS.plus} Ziel</button>
+        <button class="btn-accent" style="background:var(--surface2);color:var(--text);" onclick="openGoalModal(false)">${ICONS.plus} Neues Ziel</button>
         <button class="btn-accent" onclick="openModal()">${ICONS.plus} Eintrag</button>
       </div>
     </div>
@@ -960,10 +966,16 @@ async function handleAddEntry() {
   renderAll();
 }
 
-function openGoalModal() {
-  document.getElementById("goalLabel").value = "";
-  document.getElementById("goalTargetWeight").value = "";
-  document.getElementById("goalTargetDate").value = "";
+function openGoalModal(editExisting) {
+  state._editingGoal = !!editExisting;
+  const g = editExisting ? activeGoal() : null;
+  document.getElementById("goalModalTitle").textContent = editExisting ? "Ziel bearbeiten" : "Neues Ziel";
+  document.getElementById("goalLabel").value = editExisting ? (g.label || "") : "";
+  document.getElementById("goalTargetWeight").value = editExisting ? g.targetWeight : "";
+  document.getElementById("goalTargetDate").value = editExisting ? g.targetDate : "";
+  document.getElementById("goalHint").textContent = editExisting
+    ? "Startgewicht und Startdatum dieses Ziels bleiben unverändert, nur Zielgewicht/-datum werden korrigiert."
+    : "Startgewicht ist dein aktuellster Eintrag. Das neue Ziel wird ab heute aktiv und löst das bisherige als Countdown ab.";
   updateGoalSaveBtn();
   document.getElementById("goalModal").classList.remove("hidden");
 }
@@ -978,10 +990,18 @@ async function handleAddGoal() {
   const targetWeight = parseFloat(String(document.getElementById("goalTargetWeight").value).replace(",", "."));
   const targetDate = document.getElementById("goalTargetDate").value;
   if (!targetWeight || !targetDate) return;
-  const se = sortedEntries();
-  const startWeight = se.length ? se[se.length - 1].weight : activeGoal().targetWeight;
-  const newGoal = { id: `goal-${Date.now()}`, label, startDate: today, targetDate, startWeight, targetWeight };
-  state.goals = [...state.goals, newGoal];
+
+  if (state._editingGoal) {
+    const goals = [...state.goals];
+    const last = { ...goals[goals.length - 1], label, targetDate, targetWeight };
+    goals[goals.length - 1] = last;
+    state.goals = goals;
+  } else {
+    const se = sortedEntries();
+    const startWeight = se.length ? se[se.length - 1].weight : activeGoal().targetWeight;
+    const newGoal = { id: `goal-${Date.now()}`, label, startDate: today, targetDate, startWeight, targetWeight };
+    state.goals = [...state.goals, newGoal];
+  }
   await safeSet("goals", JSON.stringify(state.goals));
   closeGoalModal();
   renderAll();
