@@ -96,6 +96,7 @@
   .hidden { display: none !important; }
   .save-error { position: fixed; bottom: 74px; left: 20px; right: 20px; background: #3A2222; color: #F0B8B8; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
   .storage-banner { background: #3A2E1C; color: #E8C88A; font-size: 12px; padding: 12px 20px; line-height: 1.5; }
+  .diagnostic-line { font-size: 11px; color: var(--muted2); padding: 6px 20px; background: #14171A; border-bottom: 1px solid var(--surface2); }
 
   svg { display: block; }
 </style>
@@ -105,6 +106,7 @@
 <div id="hero" class="hero"></div>
 <div id="content" class="content"></div>
 <div id="storageBanner" class="storage-banner hidden"></div>
+<div id="diagnosticLine" class="diagnostic-line"></div>
 <div id="saveError" class="save-error hidden">Speichern hat nicht geklappt. Bitte nochmal versuchen.</div>
 
 <div id="addModal" class="modal-overlay hidden">
@@ -124,6 +126,7 @@
 </div>
 
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)" />
+<input type="file" id="importFileInput" accept="application/json" style="display:none" onchange="handleImportFile(event)" />
 
 <div id="goalModal" class="modal-overlay hidden">
   <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -377,6 +380,10 @@ async function safeSet(key, value) {
   if (!storageSupported()) { showSaveError(); return null; }
   try {
     window.localStorage.setItem(key, value);
+    if (key !== "__persistence_check__") {
+      state.lastSavedAt = new Date();
+      updateDiagnosticLine();
+    }
     return { key, value };
   } catch {
     showSaveError();
@@ -398,6 +405,11 @@ async function init() {
   if (!storageSupported()) {
     showStorageBanner("Speichern funktioniert im Moment nicht: dein Browser blockiert lokalen Speicher (z.B. im privaten/inkognito Modus, oder durch Browser-Einstellungen). Bitte im normalen Modus öffnen oder Speicher für diese Seite in den Browser-Einstellungen erlauben.");
   }
+
+  // Persistence self-test: proves whether localStorage actually survives between separate page opens.
+  const prevCheck = await safeGet("__persistence_check__");
+  state.persistenceProof = prevCheck.value ? JSON.parse(prevCheck.value) : null;
+  await safeSet("__persistence_check__", JSON.stringify({ lastOpen: new Date().toISOString() }));
 
   const entriesRes = await safeGet("entries");
   state.entries = entriesRes.value ? JSON.parse(entriesRes.value) : [];
@@ -454,11 +466,27 @@ function latestInWindow(field, startOffset, endOffset) {
   return inWindow[inWindow.length - 1][field];
 }
 
+function updateDiagnosticLine() {
+  const el = document.getElementById("diagnosticLine");
+  const parts = [];
+  if (state.persistenceProof && state.persistenceProof.lastOpen) {
+    const d = new Date(state.persistenceProof.lastOpen);
+    parts.push(`Voriger Besuch erkannt: ${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+  } else {
+    parts.push("Kein voriger Besuch erkannt (entweder erster Besuch, oder Speicher hält nicht zwischen dem Öffnen)");
+  }
+  if (state.lastSavedAt) {
+    parts.push(`zuletzt gespeichert: ${state.lastSavedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`);
+  }
+  el.textContent = parts.join(" · ");
+}
+
 function renderAll() {
   if (!state.ready) return;
   renderHero();
   renderContent();
   renderNav();
+  updateDiagnosticLine();
 }
 
 function activeGoal() { return state.goals[state.goals.length - 1]; }
@@ -643,6 +671,19 @@ function progressHTML() {
     });
     html += `</div>`;
   }
+
+  html += `
+    <h3 class="subsection-title">Datensicherung</h3>
+    <div class="card" style="margin-bottom:20px;">
+      <p style="font-size:12px;color:var(--muted2);margin:0 0 12px;line-height:1.5;">
+        Speicherung auf dem iPhone als Home-Bildschirm-App kann sich gelegentlich selbst zurücksetzen, das ist ein bekanntes iOS-Problem, kein Fehler dieser App. Sichere deine Daten deshalb hin und wieder als Datei.
+      </p>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-accent" style="flex:1;justify-content:center;background:var(--surface2);color:var(--text);" onclick="exportData()">Sichern</button>
+        <button class="btn-accent" style="flex:1;justify-content:center;background:var(--surface2);color:var(--text);" onclick="triggerImport()">Wiederherstellen</button>
+      </div>
+    </div>
+  `;
 
   const allWeights = se.map(e => e.weight).concat([g.startWeight, g.targetWeight]);
   const chartMin = Math.min(...allWeights) - 1;
@@ -1005,6 +1046,56 @@ async function handleAddGoal() {
   await safeSet("goals", JSON.stringify(state.goals));
   closeGoalModal();
   renderAll();
+}
+
+const BACKUP_KEYS_STATIC = ["goals", "entries", "workoutLog", "photoIndex"];
+
+function collectAllAppKeys() {
+  const keys = new Set(BACKUP_KEYS_STATIC);
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const k = window.localStorage.key(i);
+    if (k && (k.startsWith("daily:") || k.startsWith("photo:"))) keys.add(k);
+  }
+  return [...keys];
+}
+
+function exportData() {
+  const data = {};
+  collectAllAppKeys().forEach(k => {
+    const v = window.localStorage.getItem(k);
+    if (v !== null) data[k] = v;
+  });
+  const payload = { exportedAt: new Date().toISOString(), data };
+  const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `fortschritt-backup-${today}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function triggerImport() {
+  document.getElementById("importFileInput").click();
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed.data !== "object") throw new Error("invalid");
+    Object.entries(parsed.data).forEach(([k, v]) => window.localStorage.setItem(k, v));
+    alert("Wiederhergestellt. Die Seite wird jetzt neu geladen.");
+    location.reload();
+  } catch {
+    alert("Diese Datei konnte nicht gelesen werden. Bitte eine echte Sicherungsdatei dieser App auswählen.");
+  } finally {
+    event.target.value = "";
+  }
 }
 
 function toggleWorkoutDay(dateStr, plan) {
