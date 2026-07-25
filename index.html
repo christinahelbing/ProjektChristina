@@ -95,6 +95,7 @@
 
   .hidden { display: none !important; }
   .save-error { position: fixed; bottom: 74px; left: 20px; right: 20px; background: #3A2222; color: #F0B8B8; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+  .storage-banner { background: #3A2E1C; color: #E8C88A; font-size: 12px; padding: 12px 20px; line-height: 1.5; }
 
   svg { display: block; }
 </style>
@@ -103,6 +104,7 @@
 
 <div id="hero" class="hero"></div>
 <div id="content" class="content"></div>
+<div id="storageBanner" class="storage-banner hidden"></div>
 <div id="saveError" class="save-error hidden">Speichern hat nicht geklappt. Bitte nochmal versuchen.</div>
 
 <div id="addModal" class="modal-overlay hidden">
@@ -356,40 +358,74 @@ function fmtDateLong(iso) { return new Date(iso).toLocaleDateString("de-DE", { d
 function daysBetween(a, b) { return Math.round((new Date(a) - new Date(b)) / 86400000); }
 const today = todayISO();
 
+function storageSupported() {
+  try {
+    return typeof window !== "undefined" && !!window.localStorage;
+  } catch { return false; }
+}
+
 async function safeGet(key) {
-  try { const r = await window.storage.get(key); return r ? r.value : null; } catch { return null; }
+  if (!storageSupported()) return { missing: true, failed: true, value: null };
+  try {
+    const raw = window.localStorage.getItem(key);
+    return { missing: raw === null, failed: false, value: raw };
+  } catch {
+    return { missing: true, failed: true, value: null };
+  }
 }
 async function safeSet(key, value) {
-  try { const r = await window.storage.set(key, value); if (!r) showSaveError(); return r; }
-  catch { showSaveError(); return null; }
+  if (!storageSupported()) { showSaveError(); return null; }
+  try {
+    window.localStorage.setItem(key, value);
+    return { key, value };
+  } catch {
+    showSaveError();
+    return null;
+  }
 }
 function showSaveError() {
   const el = document.getElementById("saveError");
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 3500);
 }
+function showStorageBanner(text) {
+  const el = document.getElementById("storageBanner");
+  el.textContent = text;
+  el.classList.remove("hidden");
+}
 
 async function init() {
-  let g = await safeGet("goals");
-  g = g ? JSON.parse(g) : null;
-  if (!g) {
-    // Migration from older single-profile version, or first-time setup
-    let old = await safeGet("profile");
-    old = old ? JSON.parse(old) : null;
+  if (!storageSupported()) {
+    showStorageBanner("Speichern funktioniert im Moment nicht: dein Browser blockiert lokalen Speicher (z.B. im privaten/inkognito Modus, oder durch Browser-Einstellungen). Bitte im normalen Modus öffnen oder Speicher für diese Seite in den Browser-Einstellungen erlauben.");
+  }
+
+  const entriesRes = await safeGet("entries");
+  state.entries = entriesRes.value ? JSON.parse(entriesRes.value) : [];
+  const hasAnyPriorData = !entriesRes.missing || entriesRes.value;
+
+  const goalsRes = await safeGet("goals");
+  if (goalsRes.value) {
+    state.goals = JSON.parse(goalsRes.value);
+  } else if (goalsRes.failed || (goalsRes.missing && hasAnyPriorData)) {
+    // Load genuinely failed, or entries exist but goals vanished: don't silently reset the countdown.
+    showStorageBanner("Dein Ziel konnte gerade nicht geladen werden. Der Countdown unten ist ein Platzhalter und wird NICHT gespeichert. Bitte Seite neu laden, bevor du weitermachst.");
+    state.goals = [{ id: "goal-1", label: "", startDate: today, targetDate: addDays(today, TOTAL_DAYS), startWeight: state.entries.length ? state.entries[state.entries.length - 1].weight : START_WEIGHT, targetWeight: TARGET_WEIGHT }];
+  } else {
+    // Genuinely first-ever use: migrate from the older single-profile key if present, else create a fresh default.
+    const oldRes = await safeGet("profile");
+    const old = oldRes.value ? JSON.parse(oldRes.value) : null;
+    let g;
     if (old) {
       g = [{ id: "goal-1", label: "", startDate: old.startDate, targetDate: old.targetDate, startWeight: old.startWeight, targetWeight: old.startWeight - old.goalLoss }];
     } else {
       g = [{ id: "goal-1", label: "", startDate: today, targetDate: addDays(today, TOTAL_DAYS), startWeight: START_WEIGHT, targetWeight: TARGET_WEIGHT }];
     }
+    state.goals = g;
     await safeSet("goals", JSON.stringify(g));
   }
-  state.goals = g;
-
-  const e = await safeGet("entries");
-  state.entries = e ? JSON.parse(e) : [];
 
   const w = await safeGet("workoutLog");
-  let wl = w ? JSON.parse(w) : {};
+  let wl = w.value ? JSON.parse(w.value) : {};
   let migrated = false;
   Object.keys(wl).forEach(d => {
     if (typeof wl[d] === "string") { wl[d] = { [wl[d]]: true }; migrated = true; }
@@ -398,10 +434,10 @@ async function init() {
   state.workoutLog = wl;
 
   const d = await safeGet(`daily:${today}`);
-  state.dailyToday = d ? JSON.parse(d) : {};
+  state.dailyToday = d.value ? JSON.parse(d.value) : {};
 
   const pi = await safeGet("photoIndex");
-  state.photoIndex = pi ? JSON.parse(pi) : [];
+  state.photoIndex = pi.value ? JSON.parse(pi.value) : [];
 
   state.ready = true;
   renderAll();
@@ -809,7 +845,7 @@ function photosHTML() {
       </button>
     </div>
     <p style="font-size:12px;color:var(--muted2);margin:0 0 16px;line-height:1.5;">
-      Fotos werden komprimiert in deinem persönlichen App-Speicher abgelegt, an dein Konto gebunden, nicht öffentlich einsehbar. Das ist aber kein reiner Gerätespeicher wie ein Fotoalbum, sondern läuft über den Speicher dieser App.
+      Fotos werden komprimiert und bleiben lokal im Speicher dieses Browsers auf diesem Gerät, nicht auf einem Server, nicht öffentlich einsehbar. Löschst du den Browser-Speicher für diese Seite oder wechselst du das Gerät, sind sie weg, ein Export-Button gibt es aktuell nicht. Dieser Speicher ist außerdem insgesamt begrenzt, ungefähr 5 bis 10 MB je nach Browser, das reicht für einige Dutzend Fotos, aber irgendwann wird es eng.
     </p>
   `;
   if (state.photoIndex.length === 0) {
@@ -830,10 +866,10 @@ async function loadAllPhotos() {
       setPhotoTileImg(p.id, state.photoUrls[p.id]);
       continue;
     }
-    const val = await safeGet(`photo:${p.id}`);
-    if (val) {
-      state.photoUrls[p.id] = val;
-      setPhotoTileImg(p.id, val);
+    const res = await safeGet(`photo:${p.id}`);
+    if (res.value) {
+      state.photoUrls[p.id] = res.value;
+      setPhotoTileImg(p.id, res.value);
     }
   }
 }
